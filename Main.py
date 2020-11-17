@@ -1,14 +1,11 @@
 import time
 
-import requests
-
 from Public import Public
-from bs4 import BeautifulSoup
 
 p = Public()
 
 
-def post_data(base_url):
+def post_data_old(base_url):
     page_num = str(1)
     rows = str(10)
     post_data = {"page": page_num, "rows": rows}
@@ -19,6 +16,32 @@ def post_data(base_url):
         post_data['rows'] = total_rows
     post_result = p.json2dict(p.post_return(base_url, encoding='gbk', data=post_data))
     rows_data = post_result['rows']
+    return rows_data
+
+
+def post_data(base_url):
+    page_num = str(1)
+    rows = str(10)
+    total_rows = 0
+    rows_data = []
+    post_data = {"page": page_num, "rows": rows}
+    post_result = p.post_return(base_url, encoding='gbk', data=post_data)
+    if post_result is not None:
+        post_result = p.json2dict(post_result)
+        total_rows = post_result['total']
+    if int(total_rows) > 5000:
+        page_count = int(total_rows) // 5000 + 1
+        while int(page_num) <= page_count:
+            post_data['page'] = page_num
+            post_data['rows'] = str(5000)
+            page_num = str(int(page_num) + 1)
+            post_result = p.json2dict(p.post_return(base_url, encoding='gbk', data=post_data))
+            rows_data = rows_data + post_result['rows']
+    else:
+        post_data['rows'] = total_rows
+        post_result = p.json2dict(p.post_return(base_url, encoding='gbk', data=post_data))
+        rows_data = post_result['rows']
+    print(rows_data)
     return rows_data
 
 
@@ -35,7 +58,8 @@ def realtime_traffic2mysql(data):
     `id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT 'ID',
     `when_happen` datetime(0) NULL DEFAULT NULL COMMENT '发生日期 ',
     `highway_name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '高速名称',
-    `info` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '详细路况信息'
+    `info` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '详细路况信息',
+    PRIMARY KEY (`id`)
     ) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '实时路况信息' ROW_FORMAT = Dynamic;
     """
     p.mysql_exec('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', create_table_sql)
@@ -65,9 +89,8 @@ def realtime_traffic():
                 single_data = [id, when_happen_strftime, highway_name, info]
                 all_data.append(single_data)
             except ValueError as error:
-                print(error)
+                pass
         all_data = tuple(all_data)
-        print(len(all_data))
         realtime_traffic2mysql(all_data)
 
 
@@ -375,7 +398,8 @@ def employees_sql_common(table_name, table_comment, data):
   `grade` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '考核等级',
   `start_date` datetime(0) NULL DEFAULT NULL COMMENT '考核周期起始日期 ',
   `end_date` datetime(0) NULL DEFAULT NULL COMMENT '考核周期截止日期 ',
-  `owner_name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '服务单位'
+  `owner_name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '服务单位',
+  PRIMARY KEY (`cardno`)
 ) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '{table_comment}' ROW_FORMAT = Dynamic;
     """.format(table_name=table_name, table_comment=table_comment)
     p.mysql_exec('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', create_table_sql)
@@ -426,6 +450,72 @@ def company_integrity_assessment():
     company_sql_common('company_integrity_assessment', '企业诚信考核', all_data)
 
 
+def illegal_notice_sql(data):
+    create_table_sql = """CREATE TABLE if not exists illegal_notice(
+  `APPROVE_NO` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '案件编号',
+  `BRANUM` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '车牌号码',
+  `CLTNAME` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '企业名称',
+  `PSN_NAME` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '当事人姓名',
+  `CASENAME` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '案由',
+  `PRCSITE` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '违章地点',
+  `DEC_MONEY` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '罚款金额',
+  `CLOSED_DATE` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '结案日期',
+  `LAWEDEP` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '办理机构',
+  `PECDATE` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '违章时间',
+  PRIMARY KEY (`APPROVE_NO`)
+) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '违法公告' ROW_FORMAT = Dynamic;
+    """
+    p.mysql_exec('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', create_table_sql)
+    sql_temp = "REPLACE INTO illegal_notice " + "(APPROVE_NO,BRANUM,CLTNAME,PSN_NAME,CASENAME,PRCSITE,DEC_MONEY,CLOSED_DATE,LAWEDEP,PECDATE) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+    print('开始插入数据到illegal_notice表')
+    p.save2mysql('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', sql_temp, data)
+
+
+def illegal_notice():
+    base_url = 'http://218.76.40.69:8521/hngzd/public/publicIllegal/publicCaseCmcltList/caseCmcltList.jsp?page=1&rows=5000'
+    rows_data = post_data(base_url)
+    all_data = []
+    for data in rows_data:
+        single_data = [data['APPROVE_NO'], data['BRANUM'], data['CLTNAME'], data['PSN_NAME'], data['CASENAME'],
+                       data['PRCSITE'], data['DEC_MONEY'], data['CLOSED_DATE'], data['LAWEDEP'], data['PECDATE']]
+        all_data.append(tuple(single_data))
+    illegal_notice_sql(tuple(all_data))
+
+
+def exceed_notice_sql(data):
+    create_table_sql = """CREATE TABLE if not exists exceed_notice(
+      `NOTYPE` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '结案日期',
+      `CONTENT` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '办理机构',
+      `END_DATE` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '违章时间'
+    ) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '超期公告' ROW_FORMAT = Dynamic;
+    """
+    p.mysql_exec('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', create_table_sql)
+    sql_temp = "REPLACE INTO exceed_notice " + "(NOTYPE,CONTENT,END_DATE) VALUES (%s,%s,%s)"
+    print('开始插入数据到exceed_notice表')
+    p.save2mysql('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', sql_temp, data)
+
+
+def exceed_notice():
+    base_url = 'http://218.76.40.69:8521/hngzd/public/extension/extension.jsp'
+    rows_data = post_data(base_url)
+    all_data = []
+    for data in rows_data:
+        single_data = [data['NOTYPE'], data['CONTENT'], data['END_DATE']]
+        all_data.append(tuple(single_data))
+    exceed_notice_sql(tuple(all_data))
+
+
+def publicity_notice():
+    base_url = 'http://218.76.40.69:8521/hngzd/public/phtension/phtension.jsp'
+    rows_data = post_data(base_url)
+    all_data = []
+    for data in rows_data:
+        single_data = [data['NOTYPE'], data['CONTENT'], data['END_DATE']]
+        all_data.append(tuple(single_data))
+    exceed_notice_sql(tuple(all_data))
+    pass
+
+
 def run():
     ship_transport_data = ship_transport()
     passenger_vehicles()
@@ -455,4 +545,6 @@ if __name__ == '__main__':
     # company_red_list()
     # company_black_list()
     # company_integrity_assessment()
-    realtime_traffic()
+    # realtime_traffic()
+    # illegal_notice()
+    exceed_notice()
