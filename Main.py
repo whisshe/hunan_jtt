@@ -1,3 +1,5 @@
+import time
+
 import requests
 
 from Public import Public
@@ -10,14 +12,63 @@ def post_data(base_url):
     page_num = str(1)
     rows = str(10)
     post_data = {"page": page_num, "rows": rows}
-    post_result = p.post_return(base_url, post_data)
+    post_result = p.post_return(base_url, encoding='gbk', data=post_data)
     if post_result is not None:
         post_result = p.json2dict(post_result)
         total_rows = post_result['total']
         post_data['rows'] = total_rows
-    post_result = p.json2dict(p.post_return(base_url, post_data))
+    post_result = p.json2dict(p.post_return(base_url, encoding='gbk', data=post_data))
     rows_data = post_result['rows']
     return rows_data
+
+
+def get_traffic_data():
+    base_url = 'http://218.76.40.86:8080/hnsjtt-lk/traffic/getTrafficData.do'
+    post_result = p.post_return(base_url)
+    if post_result is not None:
+        post_result = p.json2dict(post_result)
+        return post_result
+
+
+def realtime_traffic2mysql(data):
+    create_table_sql = """CREATE TABLE if not exists realtime_traffic(
+    `id` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT 'ID',
+    `when_happen` datetime(0) NULL DEFAULT NULL COMMENT '发生日期 ',
+    `highway_name` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '高速名称',
+    `info` varchar(255) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '详细路况信息'
+    ) ENGINE = InnoDB CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '实时路况信息' ROW_FORMAT = Dynamic;
+    """
+    p.mysql_exec('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', create_table_sql)
+    sql_temp = "REPLACE INTO realtime_traffic " + "(id,when_happen,highway_name,info) VALUES (%s,%s,%s,%s)"
+    print('开始插入数据到realtime_traffic表')
+    p.save2mysql('172.18.69.191', 'hunan_jtt', 'hn_jtt', 'sin30=1/2', sql_temp, data)
+
+
+def realtime_traffic():
+    traffic_data = get_traffic_data()
+    all_data = []
+    if traffic_data is not None:
+        for d in traffic_data:
+            id = d['id']
+            highway_name = d['highwayName']
+            info = d['infoDescription']
+            when_happen_str = info.split('，')[0].strip()
+            try:
+                if '曰' in when_happen_str:
+                    continue
+                if '分' in when_happen_str:
+                    when_happen_strptime = time.strptime(when_happen_str, '%Y年%m月%d日%H时%M分')
+                    when_happen_strftime = time.strftime('%Y-%m-%d %H:%M', when_happen_strptime)
+                else:
+                    when_happen_strptime = time.strptime(when_happen_str, '%Y年%m月%d日%H时')
+                    when_happen_strftime = time.strftime('%Y-%m-%d %H:00', when_happen_strptime)
+                single_data = [id, when_happen_strftime, highway_name, info]
+                all_data.append(single_data)
+            except ValueError as error:
+                print(error)
+        all_data = tuple(all_data)
+        print(len(all_data))
+        realtime_traffic2mysql(all_data)
 
 
 def get_data_list(base_url):
@@ -398,9 +449,10 @@ def run():
 if __name__ == '__main__':
     # run()
     # post_data('http://218.76.40.69:8521/hngzd/public/publicCmpsn/publicCmpsnRedSList/cmpsnRedSList.jsp')
-    employees_red_list()
-    employees_black_list()
-    employees_integrity_assessment()
-    company_red_list()
-    company_black_list()
-    company_integrity_assessment()
+    # employees_red_list()
+    # employees_black_list()
+    # employees_integrity_assessment()
+    # company_red_list()
+    # company_black_list()
+    # company_integrity_assessment()
+    realtime_traffic()

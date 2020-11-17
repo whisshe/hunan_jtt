@@ -9,10 +9,10 @@ class Public:
     def __init__(self):
         pass
 
-    def post_return(self, url, data):
+    def post_return(self, url, encoding='utf-8', data=None):
         try:
             r = requests.post(url, data)
-            r.encoding = 'gbk'
+            r.encoding = encoding
             return r.text
         except:
             return None
