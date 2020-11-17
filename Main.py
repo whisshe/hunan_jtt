@@ -41,7 +41,6 @@ def post_data(base_url):
         post_data['rows'] = total_rows
         post_result = p.json2dict(p.post_return(base_url, encoding='gbk', data=post_data))
         rows_data = post_result['rows']
-    print(rows_data)
     return rows_data
 
 
